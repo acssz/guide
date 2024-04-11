@@ -22,11 +22,11 @@ if 'OUTPUT_DIR' in os.environ:
     OUTPUT_DIR = os.environ.get('OUTPUT_DIR')
 
 
-class ApiException(Exception):
+class LarkOpenApiError(Exception):
     def __init__(self, code: int, msg: str):
+        super().__init__(self, code, msg)
         self.__code = code
         self.__msg = msg
-        super(f'{self.__code} {self.__msg}')
 
     @property
     def code(self):
@@ -35,6 +35,9 @@ class ApiException(Exception):
     @property
     def msg(self):
         return self.__msg
+
+    def __str__(self) -> str:
+        return f'LarkOpenApiError: {self.code} {self.msg}'
 
 
 class NodeTreeWalker(object):
@@ -66,7 +69,7 @@ class NodeTreeWalker(object):
             if not resp.success():
                 logging.error(
                     f'failed to dispatch list space nodes request: {resp.code} {resp.msg}')
-                raise ApiException(resp.code, resp.msg)
+                raise LarkOpenApiError(resp.code, resp.msg)
 
             # dive into current node
             if resp.data.items:
@@ -100,7 +103,7 @@ def create_export_task(client: lark.Client, node: Node) -> str:
     if not resp.success():
         logging.error(
             f'failed to dispatch create export task request: {resp.code} {resp.msg}')
-        raise ApiException(resp.code, resp.msg)
+        raise LarkOpenApiError(resp.code, resp.msg)
     return resp.data.ticket
 
 
@@ -115,13 +118,13 @@ def wait_task(client: lark.Client, node: Node, ticket: str) -> ExportTask:
         if not resp.success():
             logging.error(
                 f'failed to query task execution status: {resp.code} {resp.msg}')
-            raise ApiException(resp.code, resp.msg)
+            raise LarkOpenApiError(resp.code, resp.msg)
         status, msg = resp.data.result.job_status, resp.data.result.job_error_msg
         if status == 0:
             return resp.data.result
         elif status != 1 and status != 2:
             logging.error(f'job failed: {status} {msg}')
-            raise ApiException(status, msg)
+            raise LarkOpenApiError(status, msg)
 
 
 def download_exported_pdf(client: lark.Client, task: ExportTask, path: str):
@@ -132,7 +135,7 @@ def download_exported_pdf(client: lark.Client, task: ExportTask, path: str):
     if not resp.success():
         logging.error(
             f'failed to download exported file: {resp.code} {resp.msg}')
-        raise ApiException(resp.code, resp.msg)
+        raise LarkOpenApiError(resp.code, resp.msg)
     with open(path, 'wb') as f:
         f.write(resp.raw.content)
 
