@@ -5,4 +5,19 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+    env:
+      LARK_APP_ID: ${{ secrets.SYNC_GUIDE_LARK_APP_ID }}
+      LARK_APP_SECRET: ${{ secrets.SYNC_GUIDE_LARK_APP_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: setup python
+        uses: actions/setup-python@v4
+        with: 
+          python-version: '3.11'
+          architecture: 'x64'
+      - name: install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: build
+        run: python main.py
