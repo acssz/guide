@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>跳转中</title>
+    <script>
+        const xhr = new XMLHttpRequest();
+        xhr.onreadystatechange = function () {
+            if (this.readyState === 4 && this.status === 200) {
+                const response = JSON.parse(this.responseText);
+                console.log(response)
+
+                if (response.country === 'CN' || response.country === 'HK') {
+                    window.location.replace("guide.pdf");
+                } else {
+                    window.location.replace("https://ifjphspdnc9.sg.larksuite.com/wiki/LJwkweC7FiMSg9kCqLelLpASg0c");
+                }
+            }
+        };
+        xhr.open('GET', 'https://api.country.is/', true);
+        xhr.send();
+    </script>
+</head>
+<body>
+
+</body>
+</html>

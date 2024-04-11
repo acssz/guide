@@ -1,0 +1,6 @@
+.venv/
+.idea/
+.vscode/
+export_secret.sh
+out/
+**/__pycache__

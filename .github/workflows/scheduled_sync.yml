@@ -1,0 +1,8 @@
+name: guide-auto-sync
+on:
+  schedule:
+    - cron: '0 * * * *'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
