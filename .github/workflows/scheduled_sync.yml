@@ -22,7 +22,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       - name: build pdf
-        run: python main.py
+        run: python main_async.py
       - name: optimize pdf size
         run: |
           mkdir pdfsizeopt
