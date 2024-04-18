@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os.path
 from asyncio import Task
-from typing import List, Optional, TypedDict, Dict
+from typing import List, TypedDict
 import shutil
 
 import lark_oapi as lark
