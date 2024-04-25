@@ -157,8 +157,7 @@ async def wait_task(client: lark.Client, node: Node, ticket: str) -> ExportTask:
 
     running = True
     while running:
-        req = GetExportTaskRequestBuilder().token(
-            node.node_token).ticket(ticket).build()
+        req = GetExportTaskRequestBuilder().token(node.node_token).ticket(ticket).build()
         resp = client.drive.v1.export_task.get(req)
         if not resp.success():
             logging.error(
@@ -168,7 +167,7 @@ async def wait_task(client: lark.Client, node: Node, ticket: str) -> ExportTask:
         if status == 0:
             return resp.data.result
         elif status != 1 and status != 2:
-            logging.error(f'job failed: {status} {msg}')
+            logging.error(f'job failed: {node.title}: {status} {msg}')
             raise LarkOpenApiError(status, msg)
 
 
@@ -183,6 +182,7 @@ async def download_exported_pdf(client: lark.Client, task: ExportTask, path: str
     with open(path, 'wb') as f:
         f.write(resp.raw.content)
     return path
+
 
 async def main():
     logging.basicConfig(level=logging.INFO)
