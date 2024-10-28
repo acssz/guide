@@ -4,6 +4,8 @@ import os.path
 from asyncio import Task
 from typing import List, TypedDict
 import shutil
+import time
+import random
 
 import lark_oapi as lark
 from lark_oapi.api.drive.v1 import ExportTask
@@ -22,6 +24,24 @@ OUTPUT_DIR = 'out'
 if 'OUTPUT_DIR' in os.environ:
     OUTPUT_DIR = os.environ.get('OUTPUT_DIR')
 
+
+def exponential_backoff(max_retries: int = 3, base_delay: int = 1):
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            retries = 0
+            while retries < max_retries:
+                try:
+                    result_func = func(*args, **kwargs)
+                    return result_func
+                except LarkOpenApiError as e:
+                    retries += 1
+                    print(f"Attempt {retries} failed: {e}")
+                    delay = (base_delay * 2 ** retries + random.uniform(0, 1))
+                    print(f"Retrying in {delay:.2f} seconds...")
+                    time.sleep(delay)
+            raise Exception("Max retries reached, failing.")
+        return wrapper
+    return decorator
 
 class LarkOpenApiError(Exception):
     def __init__(self, code: int, msg: str):
@@ -103,16 +123,21 @@ class DocTreeWalker(object):
 
         page_token: str | None = None
         while True:
-            builder: ListSpaceNodeRequestBuilder = ListSpaceNodeRequestBuilder().space_id(space_id)
-            if page_token:
-                builder = builder.page_token(page_token)
-            if parent_node_token:
-                builder = builder.parent_node_token(parent_node_token)
-            req: ListSpaceNodeRequest = builder.build()
-            resp: ListSpaceNodeResponse = self.__client.wiki.v2.space_node.list(req)
-            if not resp.success():
-                logging.error(f'failed to dispatch list space nodes request: {resp.code} {resp.msg}')
-                raise LarkOpenApiError(resp.code, resp.msg)
+            @exponential_backoff()
+            def node_request():
+                builder: ListSpaceNodeRequestBuilder = ListSpaceNodeRequestBuilder().space_id(space_id)
+                if page_token:
+                    builder = builder.page_token(page_token)
+                if parent_node_token:
+                    builder = builder.parent_node_token(parent_node_token)
+                req: ListSpaceNodeRequest = builder.build()
+                resp: ListSpaceNodeResponse = self.__client.wiki.v2.space_node.list(req)
+                if not resp.success():
+                    logging.error(f'failed to dispatch list space nodes request: {resp.code} {resp.msg}')
+                    raise LarkOpenApiError(resp.code, resp.msg)
+                return resp
+
+            resp = node_request()
 
             # dive into current node
             subtree_tasks = []
@@ -137,7 +162,7 @@ class DocTreeWalker(object):
             raise self.UninitializedException()
         return self.__doc_tree_root
 
-
+@exponential_backoff()
 async def create_export_task(client: lark.Client, node: Node) -> str:
     from lark_oapi.api.drive.v1 import ExportTaskBuilder, CreateExportTaskRequestBuilder
 
@@ -151,7 +176,7 @@ async def create_export_task(client: lark.Client, node: Node) -> str:
         raise LarkOpenApiError(resp.code, resp.msg)
     return resp.data.ticket
 
-
+@exponential_backoff()
 async def wait_task(client: lark.Client, node: Node, ticket: str) -> ExportTask:
     from lark_oapi.api.drive.v1 import GetExportTaskRequestBuilder
 
@@ -170,7 +195,7 @@ async def wait_task(client: lark.Client, node: Node, ticket: str) -> ExportTask:
             logging.error(f'job failed: {node.title}: {status} {msg}')
             raise LarkOpenApiError(status, msg)
 
-
+@exponential_backoff()
 async def download_exported_pdf(client: lark.Client, task: ExportTask, path: str) -> str:
     from lark_oapi.api.drive.v1 import DownloadExportTaskRequestBuilder
 
