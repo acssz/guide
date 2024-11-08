@@ -6,6 +6,7 @@ from typing import List, TypedDict
 import shutil
 import time
 import random
+import pymupdf
 
 import lark_oapi as lark
 from lark_oapi.api.drive.v1 import ExportTask
@@ -62,10 +63,11 @@ class LarkOpenApiError(Exception):
 
 
 class DocTreeNode(object):
-    def __init__(self, value: Node | None = None, parent: 'DocTreeNode' = None):
+    def __init__(self, value: Node | None = None, parent: 'DocTreeNode' = None, toc_entry: tuple[str,int] | None = None):
         self.__value = value
         self.__parent: DocTreeNode | None = parent
         self.__children: List[DocTreeNode] = []
+        self.__toc_entry: tuple[str, int] | None = toc_entry
 
     def add_child(self, child: 'DocTreeNode'):
         self.__children.append(child)
@@ -81,6 +83,10 @@ class DocTreeNode(object):
     @property
     def children(self):
         return self.__children
+
+    @property
+    def toc_entry(self):
+        return self.__toc_entry
 
     @property
     def nodes(self):
@@ -107,8 +113,13 @@ class DocTreeWalker(object):
         }))
         self.__client = client
         self.__space_id = None
+        self.__toc = []
 
-    async def walk(self, space_id: str, parent_node: DocTreeNode | None = None) -> None:
+    @property
+    def toc(self):
+        return self.__toc
+
+    async def walk(self, space_id: str, parent_node: DocTreeNode | None = None, level: int = 1) -> None:
         from lark_oapi.api.wiki.v2 import ListSpaceNodeRequest, ListSpaceNodeRequestBuilder, ListSpaceNodeResponse
 
         if not space_id == self.__space_id:
@@ -144,9 +155,9 @@ class DocTreeWalker(object):
             if resp.data.items:
                 for item in resp.data.items:
                     logging.info(f'found document: title={item.title}, type={item.obj_type}')
-                    node = DocTreeNode(item)
+                    node = DocTreeNode(item, toc_entry=(item.title, level))
                     parent_node.add_child(node)
-                    subtree_task = asyncio.create_task(self.walk(space_id, node))
+                    subtree_task = asyncio.create_task(self.walk(space_id, node, level+1))
                     subtree_tasks.append(subtree_task)
             for task in subtree_tasks:
                 await task
@@ -209,6 +220,21 @@ async def download_exported_pdf(client: lark.Client, task: ExportTask, path: str
     return path
 
 
+def generate_toc(nodes: List[DocTreeNode], tempdir) -> List[tuple[int, str, int]]:
+    toc_no_page_numbers = list(map(lambda node: node.toc_entry, nodes))
+    toc = []
+    page_number = 1
+    for index, node in enumerate(nodes):
+        (title, level) = toc_no_page_numbers[index]
+        path = os.path.join(tempdir, f'{index}.pdf')
+        with pymupdf.open(path) as doc:
+            # [lvl, title, page, dest]
+            toc.append((level, title, page_number))
+            page_number += doc.page_count
+
+    return toc
+
+
 async def main():
     logging.basicConfig(level=logging.INFO)
     client = lark.Client.builder().app_id(
@@ -254,15 +280,20 @@ async def main():
         logging.info(f'exported pdf downloaded: {job["node"].value.title}')
     await asyncio.gather(*download_tasks)
 
-    # concatenate pdfs
-    import pypdf
+    # generate toc
+    toc = generate_toc(nodes, tempdir)
 
-    with pypdf.PdfWriter() as merger:
+    # concatenate pdfs
+    output_path = os.path.join(OUTPUT_DIR, 'guide.pdf')
+
+    with pymupdf.open(output_path) as doc:
         if COVER_PDF_PATH:
-            merger.append(COVER_PDF_PATH)
+            doc.insert_file(COVER_PDF_PATH)
         for job in download_tasks:
-            merger.append(await job)
-        merger.write(os.path.join(OUTPUT_DIR, 'guide.pdf'))
+            doc.insert_file(await job)
+
+        doc.set_toc(toc)
+        doc.saveIncr()
 
     # cleanup temporary directory
     shutil.rmtree(tempdir)
