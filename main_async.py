@@ -45,6 +45,12 @@ def exponential_backoff(max_retries: int = 3, base_delay: int = 1):
                 try:
                     return await func(*args, **kwargs)
                 except LarkOpenApiError as e:
+                    # 所有错误码：https://open.larksuite.com/document/server-docs/getting-started/server-error-codes
+                    # 请求过于频繁
+                    match status:
+                        case 99991400:
+                            print(f"Rate limit reached, exiting")
+                            break
                     retry()
                 except exceptions.ConnectionError as e:
                     print("Networking error, trying again")
@@ -210,6 +216,7 @@ async def wait_task(client: lark.Client, node: Node, ticket: str) -> ExportTask:
                 f'failed to query task execution status: {resp.code} {resp.msg}')
             raise LarkOpenApiError(resp.code, resp.msg)
         status, msg = resp.data.result.job_status, resp.data.result.job_error_msg
+        # 详情见 https://open.larksuite.com/document/server-docs/docs/drive-v1/export_task/get
         if status == 0:
             return resp.data.result
         elif status != 1 and status != 2:
