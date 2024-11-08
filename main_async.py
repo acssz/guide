@@ -29,12 +29,11 @@ if 'OUTPUT_DIR' in os.environ:
 
 def exponential_backoff(max_retries: int = 3, base_delay: int = 1):
     def decorator(func):
-        def wrapper(*args, **kwargs):
+        async def wrapper(*args, **kwargs):
             retries = 0
             while retries < max_retries:
                 try:
-                    result_func = func(*args, **kwargs)
-                    return result_func
+                    return await func(*args, **kwargs)
                 except LarkOpenApiError as e:
                     retries += 1
                     print(f"Attempt {retries} failed: {e}")
@@ -136,7 +135,7 @@ class DocTreeWalker(object):
         page_token: str | None = None
         while True:
             @exponential_backoff()
-            def node_request():
+            async def node_request():
                 builder: ListSpaceNodeRequestBuilder = ListSpaceNodeRequestBuilder().space_id(space_id)
                 if page_token:
                     builder = builder.page_token(page_token)
@@ -149,7 +148,7 @@ class DocTreeWalker(object):
                     raise LarkOpenApiError(resp.code, resp.msg)
                 return resp
 
-            resp = node_request()
+            resp = await node_request()
 
             # dive into current node
             subtree_tasks = []
