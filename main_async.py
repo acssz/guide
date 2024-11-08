@@ -30,16 +30,26 @@ if 'OUTPUT_DIR' in os.environ:
 def exponential_backoff(max_retries: int = 3, base_delay: int = 1):
     def decorator(func):
         async def wrapper(*args, **kwargs):
+            from requests import exceptions
+
             retries = 0
+            def retry():
+                nonlocal retries
+                retries += 1
+                print(f"Attempt {retries} failed: {e}")
+                delay = (base_delay * 2 ** retries + random.uniform(0, 1))
+                print(f"Retrying in {delay:.2f} seconds...")
+                time.sleep(delay)
+
             while retries < max_retries:
                 try:
                     return await func(*args, **kwargs)
                 except LarkOpenApiError as e:
-                    retries += 1
-                    print(f"Attempt {retries} failed: {e}")
-                    delay = (base_delay * 2 ** retries + random.uniform(0, 1))
-                    print(f"Retrying in {delay:.2f} seconds...")
-                    time.sleep(delay)
+                    retry()
+                except exceptions.ConnectionError as e:
+                    print("Networking error, trying again")
+                    retry()
+
             raise Exception("Max retries reached, failing.")
         return wrapper
     return decorator
