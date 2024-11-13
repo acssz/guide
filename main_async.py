@@ -225,6 +225,9 @@ def generate_toc(nodes: List[DocTreeNode], tempdir) -> List[tuple[int, str, int]
     toc_no_page_numbers = list(map(lambda node: node.toc_entry, nodes))
     toc = []
     page_number = 1
+    if COVER_PDF_PATH:
+        with pymupdf.open(COVER_PDF_PATH) as cover_page:
+            page_number += cover_page.page_count
     for index, node in enumerate(nodes):
         (title, level) = toc_no_page_numbers[index]
         path = os.path.join(tempdir, f'{index}.pdf')
