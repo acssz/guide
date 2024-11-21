@@ -29,18 +29,33 @@ if 'OUTPUT_DIR' in os.environ:
 
 def exponential_backoff(max_retries: int = 3, base_delay: int = 1):
     def decorator(func):
-        def wrapper(*args, **kwargs):
+        async def wrapper(*args, **kwargs):
+            from requests import exceptions
+
             retries = 0
+            def retry():
+                nonlocal retries
+                retries += 1
+                print(f"Attempt {retries} failed: {e}")
+                delay = (base_delay * 2 ** retries + random.uniform(0, 1))
+                print(f"Retrying in {delay:.2f} seconds...")
+                time.sleep(delay)
+
             while retries < max_retries:
                 try:
-                    result_func = func(*args, **kwargs)
-                    return result_func
+                    return await func(*args, **kwargs)
                 except LarkOpenApiError as e:
-                    retries += 1
-                    print(f"Attempt {retries} failed: {e}")
-                    delay = (base_delay * 2 ** retries + random.uniform(0, 1))
-                    print(f"Retrying in {delay:.2f} seconds...")
-                    time.sleep(delay)
+                    # 所有错误码：https://open.larksuite.com/document/server-docs/getting-started/server-error-codes
+                    # 请求过于频繁
+                    match status:
+                        case 99991400:
+                            print(f"Rate limit reached, exiting")
+                            break
+                    retry()
+                except exceptions.ConnectionError as e:
+                    print("Networking error, trying again")
+                    retry()
+
             raise Exception("Max retries reached, failing.")
         return wrapper
     return decorator
@@ -136,7 +151,7 @@ class DocTreeWalker(object):
         page_token: str | None = None
         while True:
             @exponential_backoff()
-            def node_request():
+            async def node_request():
                 builder: ListSpaceNodeRequestBuilder = ListSpaceNodeRequestBuilder().space_id(space_id)
                 if page_token:
                     builder = builder.page_token(page_token)
@@ -149,7 +164,7 @@ class DocTreeWalker(object):
                     raise LarkOpenApiError(resp.code, resp.msg)
                 return resp
 
-            resp = node_request()
+            resp = await node_request()
 
             # dive into current node
             subtree_tasks = []
@@ -201,6 +216,7 @@ async def wait_task(client: lark.Client, node: Node, ticket: str) -> ExportTask:
                 f'failed to query task execution status: {resp.code} {resp.msg}')
             raise LarkOpenApiError(resp.code, resp.msg)
         status, msg = resp.data.result.job_status, resp.data.result.job_error_msg
+        # 详情见 https://open.larksuite.com/document/server-docs/docs/drive-v1/export_task/get
         if status == 0:
             return resp.data.result
         elif status != 1 and status != 2:
