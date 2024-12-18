@@ -2,11 +2,12 @@ import asyncio
 import logging
 import os.path
 from asyncio import Task
-from typing import List, TypedDict
+from typing import List, TypedDict, Any, Optional
 import shutil
 import time
 import random
 import pymupdf
+from pymupdf import Page, Document
 from pathlib import Path
 
 import lark_oapi as lark
@@ -220,8 +221,10 @@ async def download_exported_pdf(client: lark.Client, task: ExportTask, path: str
         f.write(resp.raw.content)
     return path
 
+# TODO Create dedicated class for toc?
+type Toc = list[tuple[int, str, int]]
 
-def generate_toc(nodes: List[DocTreeNode], tempdir) -> List[tuple[int, str, int]]:
+def generate_toc(nodes: List[DocTreeNode], tempdir) -> Toc:
     toc_no_page_numbers = list(map(lambda node: node.toc_entry, nodes))
     toc = []
     page_number = 1
@@ -238,6 +241,53 @@ def generate_toc(nodes: List[DocTreeNode], tempdir) -> List[tuple[int, str, int]
 
     return toc
 
+def is_lark_link(link: dict[str, Any]) -> bool:
+    return "larksuite.com" in link["uri"]
+
+def link_text(page: Page, link: dict[str, Any]) -> str:
+    return page.get_textbox(link["from"])
+
+def points_to(text: str, section: str) -> bool:
+    # 有的链接的锚文本跟链接所指向的章节的名字不一样，例如
+    # 「III.6.1 ⾸次办理居留证」的第四章的第一个链接「《居留证的延
+    # 期》」，它所指向的章节的全名则是「III.6.2 居留证的延期」。
+    #
+    # 其次，从飞书导出的pdf文档的精度不够高，用pymupdf取得以上例子里的
+    # 链接的锚文本时会发现锚文本实是「《居留证的延期》和」而非天书文档
+    # 的「《居留证的延》」。有时候锚文本还会跨越两行。
+    import re
+    section_split = section.split()
+    section_no_levels = section_split[1] if len(section_split) > 1 else section
+    # also match newline characters in the prefix
+    regex = "(?s).*" + "\\s?".join(list(section_no_levels)) + ".*"
+
+    return section.endswith(text)\
+        or section.startswith(text)\
+        or section_no_levels.endswith(text)\
+        or section_no_levels.startswith(text)\
+        or re.match(regex, text)
+
+def localize_link(link: dict[str, Any], text: str, toc: Toc) -> Optional[dict[str, Any]]:
+    toc_entries = [entry for entry in toc if points_to(text, entry[1])]
+    if len(toc_entries) > 0:
+        entry = toc_entries[0]
+        link["kind"] = 1            # LINK_GOTO
+        link["page"] = entry[2] - 1 # Counts from 0
+        link["uri"] = None
+        return link
+    return None
+
+def localize_links_in_doc(doc, toc: Toc):
+    for page in doc:
+        for link in page.links():
+            if is_lark_link(link):
+                # u200b是隐形的空格unicode符号
+                text = link_text(page, link).replace("\u200b", "").strip()
+                new_link = localize_link(link, text, toc)
+                if new_link:
+                    page.update_link(new_link)
+                else:
+                    logging.info(f"no link found for '{text}'")
 
 async def main():
     logging.basicConfig(level=logging.INFO)
@@ -301,6 +351,7 @@ async def main():
     # incremental save is not allowed on a new document
     with pymupdf.open(output_path) as doc:
         doc.set_toc(toc)
+        localize_links_in_doc(doc, toc)
         doc.saveIncr()
 
     # cleanup temporary directory
