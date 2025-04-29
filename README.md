@@ -1,26 +1,5 @@
-# 使用说明
-克隆Git仓库
+# 留学手册
 
-```
-git clone https://github.com/acssz/guide
-cd guide
-```
+该项目已废弃，目前仅保留向新版留学手册跳转的功能。
 
-安装Python包，推荐使用virtualenv
-
-```
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-设置环境变量
-
-```
-export LARK_APP_ID=<app-id>
-export LARK_APP_SECRET=<app-secret>
-```
-
-```
-python main_async.py
-```
+https://guide.acssz.org/share/glk90p035i/p/-V0cAxSyr6p

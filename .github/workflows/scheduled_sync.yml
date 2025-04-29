@@ -1,48 +1,23 @@
 name: guide-auto-sync
 on:
-  schedule:
-    - cron: '0 * * * *'
+  push:
+    branches:
+      - main
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      LARK_APP_ID: ${{ secrets.SYNC_GUIDE_LARK_APP_ID }}
-      LARK_APP_SECRET: ${{ secrets.SYNC_GUIDE_LARK_APP_SECRET }}
-      COVER_PDF_PATH: resources/cover.pdf
     steps:
       - uses: actions/checkout@v4
-      - name: setup python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-          architecture: 'x64'
-      - name: install python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      - name: build pdf
-        run: python main_async.py
-      - name: optimize pdf size
-        run: |
-          mkdir pdfsizeopt
-          cd pdfsizeopt
-          wget -O pdfsizeopt_libexec_linux.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2023-04-18/pdfsizeopt_libexec_linux-v9.tar.gz
-          tar xzvf pdfsizeopt_libexec_linux.tar.gz
-          rm -f    pdfsizeopt_libexec_linux.tar.gz
-          wget -O pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
-          chmod +x pdfsizeopt.single
-          ln -s pdfsizeopt.single pdfsizeopt
-          cd ..
-          mv out/guide.pdf .
-          ./pdfsizeopt/pdfsizeopt guide.pdf out/guide.pdf
       - name: build redirect page
-        run: cp resources/index.html out/index.html
+        run: mkdir out && cp resources/index.html out/index.html
       - name: upload
         uses: actions/upload-pages-artifact@v3
         with:
           name: github-pages
           path: out
+
   deploy:
     needs: build
     runs-on: ubuntu-latest
@@ -50,7 +25,6 @@ jobs:
       contents: read
       pages: write
       id-token: write
-    # Deploy to the github-pages environment
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
